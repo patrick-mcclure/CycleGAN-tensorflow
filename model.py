@@ -19,6 +19,8 @@ class cyclegan(object):
         self.output_c_dim = args.output_nc
         self.L1_lambda = args.L1_lambda
         self.dataset_dir = args.dataset_dir
+        self.dataset_dir_A = args.dataset_dir + args.dataset_dir_A
+        self.dataset_dir_B = args.dataset_dir + args.dataset_dir_B
 
         self.discriminator = discriminator
         if args.use_resnet:
@@ -42,12 +44,12 @@ class cyclegan(object):
 
     def _build_model(self):
         self.real_data = tf.placeholder(tf.float32,
-                                        [None, self.image_size, self.image_size,
+                                        [None, 54, 64, 50,
                                          self.input_c_dim + self.output_c_dim],
                                         name='real_A_and_B_images')
 
-        self.real_A = self.real_data[:, :, :, :self.input_c_dim]
-        self.real_B = self.real_data[:, :, :, self.input_c_dim:self.input_c_dim + self.output_c_dim]
+        self.real_A = self.real_data[:, :, :,:, :self.input_c_dim]
+        self.real_B = self.real_data[:, :, :,:, self.input_c_dim:self.input_c_dim + self.output_c_dim]
 
         self.fake_B = self.generator(self.real_A, self.options, False, name="generatorA2B")
         self.fake_A_ = self.generator(self.fake_B, self.options, False, name="generatorB2A")
@@ -68,10 +70,10 @@ class cyclegan(object):
             + self.L1_lambda * abs_criterion(self.real_B, self.fake_B_)
 
         self.fake_A_sample = tf.placeholder(tf.float32,
-                                            [None, self.image_size, self.image_size,
+                                            [None, 54, 64, 50,
                                              self.input_c_dim], name='fake_A_sample')
         self.fake_B_sample = tf.placeholder(tf.float32,
-                                            [None, self.image_size, self.image_size,
+                                            [None, 54, 64, 50,
                                              self.output_c_dim], name='fake_B_sample')
         self.DB_real = self.discriminator(self.real_B, self.options, reuse=True, name="discriminatorB")
         self.DA_real = self.discriminator(self.real_A, self.options, reuse=True, name="discriminatorA")
@@ -104,10 +106,10 @@ class cyclegan(object):
         )
 
         self.test_A = tf.placeholder(tf.float32,
-                                     [None, self.image_size, self.image_size,
+                                     [None, 54, 64, 50,
                                       self.input_c_dim], name='test_A')
         self.test_B = tf.placeholder(tf.float32,
-                                     [None, self.image_size, self.image_size,
+                                     [None, 54, 64, 50,
                                       self.output_c_dim], name='test_B')
         self.testB = self.generator(self.test_A, self.options, True, name="generatorA2B")
         self.testA = self.generator(self.test_B, self.options, True, name="generatorB2A")
@@ -139,8 +141,12 @@ class cyclegan(object):
                 print(" [!] Load failed...")
 
         for epoch in range(args.epoch):
-            dataA = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/trainA'))
-            dataB = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/trainB'))
+            dataA = glob('{}/*.gz'.format(self.dataset_dir_A))
+            dataB = glob('{}/*.gz'.format(self.dataset_dir_B))
+            print(self.dataset_dir_A)
+            print(len(dataA))
+            print(self.dataset_dir_B)
+            print(len(dataB))
             np.random.shuffle(dataA)
             np.random.shuffle(dataB)
             batch_idxs = min(min(len(dataA), len(dataB)), args.train_size) // self.batch_size
@@ -175,13 +181,13 @@ class cyclegan(object):
                 if np.mod(counter, args.print_freq) == 1:
                     self.sample_model(args.sample_dir, epoch, idx)
 
-                if np.mod(counter, args.save_freq) == 2:
+                if np.mod(counter, args.save_freq) == 1:
                     self.save(args.checkpoint_dir, counter)
 
     def save(self, checkpoint_dir, step):
+        print('Model saved')
         model_name = "cyclegan.model"
-        model_dir = "%s_%s" % (self.dataset_dir, self.image_size)
-        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
+        print(checkpoint_dir)
 
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
@@ -193,9 +199,6 @@ class cyclegan(object):
     def load(self, checkpoint_dir):
         print(" [*] Reading checkpoint...")
 
-        model_dir = "%s_%s" % (self.dataset_dir, self.image_size)
-        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
-
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
             ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
@@ -205,8 +208,8 @@ class cyclegan(object):
             return False
 
     def sample_model(self, sample_dir, epoch, idx):
-        dataA = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testA'))
-        dataB = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testB'))
+        dataA = glob('{}/*.gz'.format(self.dataset_dir_A))
+        dataB = glob('{}/*.gz'.format(self.dataset_dir_B))
         np.random.shuffle(dataA)
         np.random.shuffle(dataB)
         batch_files = list(zip(dataA[:self.batch_size], dataB[:self.batch_size]))
@@ -217,19 +220,17 @@ class cyclegan(object):
             [self.fake_A, self.fake_B],
             feed_dict={self.real_data: sample_images}
         )
-        save_images(fake_A, [self.batch_size, 1],
-                    './{}/A_{:02d}_{:04d}.jpg'.format(sample_dir, epoch, idx))
-        save_images(fake_B, [self.batch_size, 1],
-                    './{}/B_{:02d}_{:04d}.jpg'.format(sample_dir, epoch, idx))
+        save_images(fake_A, './{}/A_{:02d}_{:04d}.p'.format(sample_dir, epoch, idx))
+        save_images(fake_B, './{}/B_{:02d}_{:04d}.p'.format(sample_dir, epoch, idx))
 
     def test(self, args):
         """Test cyclegan"""
         init_op = tf.global_variables_initializer()
         self.sess.run(init_op)
         if args.which_direction == 'AtoB':
-            sample_files = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testA'))
+            sample_files = glob('{}/*.nii.gz'.format(self.dataset_dir_A))
         elif args.which_direction == 'BtoA':
-            sample_files = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testB'))
+            sample_files = glob('{}/*.nii.gz'.format(self.dataset_dir_B))
         else:
             raise Exception('--which_direction must be AtoB or BtoA')
 
@@ -254,7 +255,7 @@ class cyclegan(object):
             image_path = os.path.join(args.test_dir,
                                       '{0}_{1}'.format(args.which_direction, os.path.basename(sample_file)))
             fake_img = self.sess.run(out_var, feed_dict={in_var: sample_image})
-            save_images(fake_img, [1, 1], image_path)
+            save_images(fake_img, image_path)
             index.write("<td>%s</td>" % os.path.basename(image_path))
             index.write("<td><img src='%s'></td>" % (sample_file if os.path.isabs(sample_file) else (
                 '..' + os.path.sep + sample_file)))
